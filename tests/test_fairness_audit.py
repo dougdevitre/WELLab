@@ -187,3 +187,142 @@ class TestCLI:
                 ])
         finally:
             os.unlink(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Tests -- Equalized Odds
+# ---------------------------------------------------------------------------
+
+class TestEqualizedOdds:
+    """Tests for equalized_odds."""
+
+    def test_equal_tpr_fpr_passes(self) -> None:
+        preds = np.array([1, 0, 1, 0, 1, 0, 1, 0])
+        labels = np.array([1, 0, 1, 0, 1, 0, 1, 0])
+        groups = np.array(["A", "A", "A", "A", "B", "B", "B", "B"])
+        auditor = FairnessAuditor(demographic_parity_tolerance=0.1)
+        result = auditor.equalized_odds(preds, labels, groups)
+        assert result["passed"] is True
+        assert result["max_tpr_difference"] <= 0.1
+        assert result["max_fpr_difference"] <= 0.1
+
+    def test_unequal_tpr_fails(self) -> None:
+        # Group A: all correct, Group B: all wrong predictions for positives
+        preds = np.array([1, 1, 0, 0, 0, 0, 0, 0])
+        labels = np.array([1, 1, 0, 0, 1, 1, 0, 0])
+        groups = np.array(["A", "A", "A", "A", "B", "B", "B", "B"])
+        auditor = FairnessAuditor(demographic_parity_tolerance=0.05)
+        result = auditor.equalized_odds(preds, labels, groups)
+        assert result["passed"] is False
+        assert result["max_tpr_difference"] > 0.05
+
+    def test_returns_per_group_rates(self) -> None:
+        preds = np.array([1, 0, 1, 0])
+        labels = np.array([1, 0, 1, 0])
+        groups = np.array(["A", "A", "B", "B"])
+        auditor = FairnessAuditor()
+        result = auditor.equalized_odds(preds, labels, groups)
+        assert "group_tpr" in result
+        assert "group_fpr" in result
+        assert set(result["group_tpr"].keys()) == {"A", "B"}
+
+
+# ---------------------------------------------------------------------------
+# Tests -- Calibration by Group
+# ---------------------------------------------------------------------------
+
+class TestCalibrationByGroup:
+    """Tests for calibration_by_group."""
+
+    def test_well_calibrated_returns_low_ece(self) -> None:
+        rng = np.random.RandomState(42)
+        n = 200
+        probs = rng.uniform(0, 1, n)
+        labels = (rng.uniform(0, 1, n) < probs).astype(int)
+        groups = np.array(["A"] * 100 + ["B"] * 100)
+        auditor = FairnessAuditor()
+        result = auditor.calibration_by_group(probs, labels, groups, n_bins=5)
+        assert "group_calibration" in result
+        for g_name, g_data in result["group_calibration"].items():
+            assert "expected_calibration_error" in g_data
+            # Well-calibrated data should have relatively low ECE
+            assert g_data["expected_calibration_error"] < 0.3
+
+    def test_max_ece_difference_computed(self) -> None:
+        probs = np.array([0.1, 0.9, 0.1, 0.9, 0.5, 0.5, 0.5, 0.5])
+        labels = np.array([0, 1, 0, 1, 1, 1, 0, 0])
+        groups = np.array(["A", "A", "A", "A", "B", "B", "B", "B"])
+        auditor = FairnessAuditor()
+        result = auditor.calibration_by_group(probs, labels, groups)
+        assert "max_ece_difference" in result
+        assert isinstance(result["max_ece_difference"], float)
+
+    def test_single_group_calibration(self) -> None:
+        probs = np.array([0.2, 0.8, 0.5])
+        labels = np.array([0, 1, 1])
+        groups = np.array(["X", "X", "X"])
+        auditor = FairnessAuditor()
+        result = auditor.calibration_by_group(probs, labels, groups)
+        assert "X" in result["group_calibration"]
+        assert result["max_ece_difference"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests -- Intersectional Audit
+# ---------------------------------------------------------------------------
+
+class TestIntersectionalAudit:
+    """Tests for intersectional_audit."""
+
+    def test_intersectional_groups_created(self) -> None:
+        preds = np.array([1, 0, 1, 0, 1, 0, 1, 0])
+        auditor = FairnessAuditor()
+        result = auditor.intersectional_audit(
+            preds,
+            protected_attributes=["gender", "race"],
+            attribute_arrays={
+                "gender": np.array(["M", "M", "F", "F", "M", "M", "F", "F"]),
+                "race": np.array(["W", "B", "W", "B", "W", "B", "W", "B"]),
+            },
+        )
+        assert "intersections" in result
+        # Should have intersections like M_x_W, M_x_B, F_x_W, F_x_B
+        assert len(result["intersections"]) == 4
+
+    def test_intersectional_fair_data_passes(self) -> None:
+        preds = np.array([1, 0, 1, 0, 1, 0, 1, 0])
+        auditor = FairnessAuditor(disparate_impact_floor=0.80)
+        result = auditor.intersectional_audit(
+            preds,
+            protected_attributes=["group"],
+            attribute_arrays={"group": np.array(["A", "A", "B", "B", "A", "A", "B", "B"])},
+        )
+        assert result["passed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Tests -- Bootstrap Confidence Intervals
+# ---------------------------------------------------------------------------
+
+class TestBootstrapCI:
+    """Tests for confidence interval methods."""
+
+    def test_dp_with_ci_has_interval(self) -> None:
+        preds, groups = _fair_predictions()
+        auditor = FairnessAuditor()
+        result = auditor.compute_demographic_parity_with_ci(
+            preds, groups, n_bootstrap=100,
+        )
+        assert "max_difference_ci" in result
+        ci_low, ci_high = result["max_difference_ci"]
+        assert ci_low <= ci_high
+
+    def test_di_with_ci_has_interval(self) -> None:
+        preds, groups = _fair_predictions()
+        auditor = FairnessAuditor()
+        result = auditor.compute_disparate_impact_with_ci(
+            preds, groups, n_bootstrap=100,
+        )
+        assert "disparate_impact_ratio_ci" in result
+        ci_low, ci_high = result["disparate_impact_ratio_ci"]
+        assert ci_low <= ci_high
