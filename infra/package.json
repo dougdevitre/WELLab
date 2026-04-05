@@ -1,0 +1,23 @@
+{
+  "name": "wellab-infra",
+  "version": "1.0.0",
+  "description": "AWS CDK infrastructure for the WELLab platform — Washington University Lifespan Wellbeing Lab",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.140.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "~5.4.0",
+    "ts-node": "^10.9.2",
+    "aws-cdk": "^2.140.0"
+  }
+}

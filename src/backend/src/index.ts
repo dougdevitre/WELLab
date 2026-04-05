@@ -13,6 +13,7 @@ import healthRouter from './routes/health';
 import lifespanRouter from './routes/lifespan';
 import cognitiveRouter from './routes/cognitive';
 import interventionsRouter from './routes/interventions';
+import insightsRouter from './routes/insights';
 
 // ---------------------------------------------------------------------------
 // Environment validation
@@ -114,6 +115,7 @@ app.get('/api/v1/health', (_req: Request, res: Response) => {
       'health',
       'lifespan-trajectory',
       'cognitive-health',
+      'ai-insights',
     ],
     timestamp: new Date().toISOString(),
   });
@@ -134,6 +136,7 @@ app.use('/api/v1', healthRouter);
 app.use('/api/v1', lifespanRouter);
 app.use('/api/v1', cognitiveRouter);
 app.use('/api/v1/interventions', interventionsRouter);
+app.use('/api/v1', insightsRouter);
 
 // The interventions router also exposes a participant-scoped GET, so mount it
 // at the top level /api/v1 as well for the /participants/:id/interventions path.
@@ -178,7 +181,7 @@ const server = app.listen(PORT, () => {
   logger.info(`WELLab API server running on port ${PORT}`);
   logger.info('API base path: /api/v1');
   logger.info(
-    'Registered modules: Emotional Dynamics, Health, Lifespan Trajectory, Cognitive Health',
+    'Registered modules: Emotional Dynamics, Health, Lifespan Trajectory, Cognitive Health, AI Insights',
   );
 });
 
