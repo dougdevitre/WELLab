@@ -1,47 +1,44 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { validateBody } from '../middleware/validation';
 import { Observation, ApiResponse } from '../types';
 import { logger } from '../utils/logger';
+import { asyncHandler } from '../utils/asyncHandler';
+import { parsePagination, paginate } from '../utils/pagination';
+import { mockObservations } from '../services/mockData';
 
 const router = Router();
 
-/** Mock observations store */
-const mockObservations: Observation[] = [
-  {
-    id: 'obs-001',
-    participantId: 'p-001',
-    timestamp: '2024-06-15T09:30:00Z',
-    source: 'ema',
-    measures: { happiness: 7, sadness: 2, anxiety: 3, energy: 6 },
-    context: { activity: 'morning-routine', socialContext: 'alone', deviceType: 'mobile' },
-  },
-  {
-    id: 'obs-002',
-    participantId: 'p-001',
-    timestamp: '2024-06-15T14:00:00Z',
-    source: 'ema',
-    measures: { happiness: 5, sadness: 4, anxiety: 5, energy: 4 },
-    context: { activity: 'work', socialContext: 'colleagues', deviceType: 'mobile' },
-  },
-];
+const createObservationSchema = z.object({
+  source: z.enum(['ema', 'sensor', 'clinical', 'self-report']),
+  measures: z.record(z.union([z.number(), z.string(), z.boolean()])),
+  context: z
+    .object({
+      location: z.string().optional(),
+      activity: z.string().optional(),
+      socialContext: z.string().optional(),
+      deviceType: z.string().optional(),
+    })
+    .optional(),
+});
 
 /**
  * GET /participants/:id/observations
  * List EMA observations for a given participant.
  */
-router.get('/participants/:id/observations', (req: Request, res: Response) => {
-  const { id } = req.params;
-  logger.info('Fetching observations', { participantId: id });
+router.get(
+  '/participants/:id/observations',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    logger.info('Fetching observations', { participantId: id });
 
-  const results = mockObservations.filter((o) => o.participantId === id);
+    const results = mockObservations.filter((o) => o.participantId === id);
 
-  const response: ApiResponse<Observation[]> = {
-    success: true,
-    data: results,
-    meta: { total: results.length, timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    const params = parsePagination(req);
+    const response = paginate(results as unknown as Record<string, unknown>[], params);
+    res.json(response);
+  }),
+);
 
 /**
  * POST /participants/:id/observations
@@ -49,11 +46,8 @@ router.get('/participants/:id/observations', (req: Request, res: Response) => {
  */
 router.post(
   '/participants/:id/observations',
-  validateBody({
-    required: ['source', 'measures'],
-    types: { source: 'string', measures: 'object' },
-  }),
-  (req: Request, res: Response) => {
+  validateBody(createObservationSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     logger.info('Recording observation', { participantId: id, source: req.body.source });
 
@@ -74,7 +68,7 @@ router.post(
       meta: { timestamp: new Date().toISOString() },
     };
     res.status(201).json(response);
-  },
+  }),
 );
 
 export default router;

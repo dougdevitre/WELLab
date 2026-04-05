@@ -11,17 +11,23 @@
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test --workspaces --if-present -- --coverage",
     "api:dev": "npm run dev --workspace=src/backend",
     "deploy:staging": "echo 'Deploying to staging...' && npm run build",
     "deploy:prod": "echo 'Deploying to production...' && npm run build",
-    "lint": "eslint 'src/**/*.{ts,tsx}'"
+    "lint": "eslint 'src/**/*.{ts,tsx}'",
+    "format": "prettier --write 'src/**/*.{ts,tsx,json,css}'",
+    "type-check": "tsc --noEmit",
+    "audit": "npm audit && pip-audit -r requirements.txt",
+    "clean": "rm -rf dist coverage src/frontend/dist src/backend/dist .pytest_cache htmlcov"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "eslint": "^8.57.0",
-    "prettier": "^3.2.0"
+    "typescript": "~5.9.3",
+    "eslint": "8.57.0",
+    "prettier": "3.2.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   }
 }

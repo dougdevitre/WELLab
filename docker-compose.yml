@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node-builder
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src/frontend:/app/src/frontend
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001}
+      - VITE_COGNITO_USER_POOL_ID=${VITE_COGNITO_USER_POOL_ID}
+      - VITE_COGNITO_CLIENT_ID=${VITE_COGNITO_CLIENT_ID}
+    command: npm run dev --workspace=src/frontend
+    networks:
+      - wellab
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node-builder
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./src/backend:/app/src/backend
+      - /app/node_modules
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - API_PORT=${API_PORT:-3001}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
+      - DYNAMODB_TABLE_PREFIX=${DYNAMODB_TABLE_PREFIX}
+      - DYNAMODB_PUBLICATIONS_TABLE=${DYNAMODB_PUBLICATIONS_TABLE}
+      - DYNAMODB_PROJECTS_TABLE=${DYNAMODB_PROJECTS_TABLE}
+      - COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
+      - JWT_SECRET=${JWT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+    command: npm run dev --workspace=src/backend
+    networks:
+      - wellab
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  ml-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ml-builder
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/ml:/app/src/ml
+    environment:
+      - ML_API_PORT=${ML_API_PORT:-8000}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    command: python -m uvicorn src.ml.api:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - wellab
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  wellab:
+    driver: bridge

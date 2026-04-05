@@ -42,10 +42,16 @@ export default function WellbeingScoreCard({
   label = "Your Wellbeing Today",
 }: WellbeingScoreCardProps) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-6">
+    <article
+      aria-label={`Wellbeing score: ${overall} out of 100`}
+      className="bg-white rounded-xl shadow-sm border p-6"
+    >
       <h3 className="text-sm font-medium text-gray-500 mb-1">{label}</h3>
       <div className="flex items-end gap-2 mb-4">
-        <span className={`text-5xl font-bold ${scoreColor(overall)}`}>
+        <span
+          className={`text-5xl font-bold ${scoreColor(overall)}`}
+          aria-label={`Score: ${overall}`}
+        >
           {overall}
         </span>
         <span className="text-gray-400 text-lg mb-1">/ 100</span>
@@ -67,6 +73,11 @@ export default function WellbeingScoreCard({
                   <div
                     className={`${domainColors[domain]} h-2 rounded-full transition-all`}
                     style={{ width: `${value}%` }}
+                    role="progressbar"
+                    aria-valuenow={value}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${domainLabels[domain]}: ${value}%`}
                   />
                 </div>
                 <span className="text-xs text-gray-600 w-8 text-right">
@@ -77,6 +88,6 @@ export default function WellbeingScoreCard({
           )}
         </div>
       )}
-    </div>
+    </article>
   );
 }

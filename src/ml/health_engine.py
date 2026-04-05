@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -33,9 +35,12 @@ except ImportError:  # pragma: no cover
     _HAS_STATSMODELS = False
 
 from src.ml.config import HEALTH_ENGINE_PARAMS, RANDOM_SEED
+from src.ml.exceptions import InsufficientDataError, SchemaValidationError
 from src.ml.utils import set_reproducible_seed
 
 logger = logging.getLogger(__name__)
+
+_MODEL_VERSION = "1.0.0"
 
 
 @dataclass
@@ -109,7 +114,7 @@ class CausalHealthAnalyzer:
         set_reproducible_seed(self.seed)
 
         if data is None:
-            raise ValueError("data must be provided")
+            raise InsufficientDataError(required=1, actual=0, context="data must be provided")
 
         logger.info(
             "Estimating causal effect: %s -> %s | %s",
@@ -220,6 +225,58 @@ class CausalHealthAnalyzer:
             "method": "stub_ols_per_group",
         }
 
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save the analyzer to disk with metadata.
+
+        Parameters
+        ----------
+        path : str
+            File path for the serialized model.
+        """
+        payload = {
+            "model": self,
+            "metadata": {
+                "model_version": _MODEL_VERSION,
+                "training_timestamp": datetime.now(timezone.utc).isoformat(),
+                "config": {
+                    "significance_level": self.significance_level,
+                    "causal_method": self.causal_method,
+                    "seed": self.seed,
+                },
+                "feature_names": [],
+            },
+        }
+        joblib.dump(payload, path)
+        logger.info("CausalHealthAnalyzer saved to %s", path)
+
+    @classmethod
+    def load(cls, path: str) -> "CausalHealthAnalyzer":
+        """Load a previously saved analyzer from disk.
+
+        Parameters
+        ----------
+        path : str
+            File path to the serialized model.
+
+        Returns
+        -------
+        CausalHealthAnalyzer
+            The deserialized analyzer instance.
+        """
+        payload = joblib.load(path)
+        model = payload["model"]
+        logger.info(
+            "CausalHealthAnalyzer loaded from %s (version=%s, trained=%s)",
+            path,
+            payload["metadata"]["model_version"],
+            payload["metadata"]["training_timestamp"],
+        )
+        return model
+
     def bidirectional_analysis(
         self,
         wellbeing_data: pd.DataFrame,
@@ -257,7 +314,10 @@ class CausalHealthAnalyzer:
         )
 
         if merged.empty:
-            raise ValueError("Merge produced an empty DataFrame; check join keys.")
+            raise InsufficientDataError(
+                required=1, actual=0,
+                context="Merge produced an empty DataFrame; check join keys",
+            )
 
         logger.info("Bidirectional analysis on %d merged rows", len(merged))
 

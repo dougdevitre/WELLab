@@ -1,3 +1,4 @@
+import Card from "../components/ui/Card";
 import type { InterventionROI, RiskBucket } from "../types";
 
 // ---------- placeholder data ----------
@@ -44,19 +45,16 @@ export default function PolicyDashboard() {
       <h1 className="text-2xl font-bold">Policy Dashboard</h1>
 
       {/* Population wellbeing map placeholder */}
-      <section className="bg-white rounded-xl shadow-sm border p-6">
-        <h2 className="text-sm font-medium text-gray-500 mb-4">
-          Population Wellbeing by Region
-        </h2>
+      <Card title="Population Wellbeing by Region">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-gray-500">
-                <th className="py-2 pr-4 font-medium">Region</th>
-                <th className="py-2 pr-4 font-medium">Population</th>
-                <th className="py-2 pr-4 font-medium">Avg Wellbeing</th>
-                <th className="py-2 pr-4 font-medium">Trend</th>
-                <th className="py-2 font-medium">Distribution</th>
+                <th scope="col" className="py-2 pr-4 font-medium">Region</th>
+                <th scope="col" className="py-2 pr-4 font-medium">Population</th>
+                <th scope="col" className="py-2 pr-4 font-medium">Avg Wellbeing</th>
+                <th scope="col" className="py-2 pr-4 font-medium">Trend</th>
+                <th scope="col" className="py-2 font-medium">Distribution</th>
               </tr>
             </thead>
             <tbody>
@@ -94,13 +92,10 @@ export default function PolicyDashboard() {
           Map visualization will render here once a mapping library is
           integrated (e.g., Mapbox GL, Leaflet).
         </p>
-      </section>
+      </Card>
 
       {/* Risk distribution */}
-      <section className="bg-white rounded-xl shadow-sm border p-6">
-        <h2 className="text-sm font-medium text-gray-500 mb-4">
-          Risk Distribution
-        </h2>
+      <Card title="Risk Distribution">
         <div className="flex gap-1 h-10 rounded-lg overflow-hidden mb-4">
           {riskBuckets.map((b) => (
             <div
@@ -122,26 +117,23 @@ export default function PolicyDashboard() {
             </div>
           ))}
         </div>
-      </section>
+      </Card>
 
       {/* Intervention ROI table */}
-      <section className="bg-white rounded-xl shadow-sm border p-6">
-        <h2 className="text-sm font-medium text-gray-500 mb-4">
-          Intervention ROI Analysis
-        </h2>
+      <Card title="Intervention ROI Analysis">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-gray-500">
-                <th className="py-2 pr-4 font-medium">Intervention</th>
-                <th className="py-2 pr-4 font-medium">Target Population</th>
-                <th className="py-2 pr-4 font-medium text-right">
+                <th scope="col" className="py-2 pr-4 font-medium">Intervention</th>
+                <th scope="col" className="py-2 pr-4 font-medium">Target Population</th>
+                <th scope="col" className="py-2 pr-4 font-medium text-right">
                   Cost / Person
                 </th>
-                <th className="py-2 pr-4 font-medium text-right">
+                <th scope="col" className="py-2 pr-4 font-medium text-right">
                   Wellbeing Gain
                 </th>
-                <th className="py-2 font-medium text-right">ROI</th>
+                <th scope="col" className="py-2 font-medium text-right">ROI</th>
               </tr>
             </thead>
             <tbody>
@@ -182,7 +174,7 @@ export default function PolicyDashboard() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Card>
     </div>
   );
 }

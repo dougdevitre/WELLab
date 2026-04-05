@@ -15,8 +15,10 @@ Coupling types
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression  # noqa: F401 (stub dep)
@@ -28,9 +30,12 @@ from src.ml.config import (
     EMOTION_VOLATILITY_WINDOW,
     RANDOM_SEED,
 )
+from src.ml.exceptions import ModelNotFittedError, SchemaValidationError
 from src.ml.utils import set_reproducible_seed, validate_data_schema
 
 logger = logging.getLogger(__name__)
+
+_MODEL_VERSION = "1.0.0"
 
 # Expected schema for the input data
 _INPUT_SCHEMA = {
@@ -110,9 +115,7 @@ class EmotionCouplingAnalyzer:
 
         errors = validate_data_schema(data, _INPUT_SCHEMA)
         if errors:
-            raise ValueError(
-                f"Input data failed schema validation: {errors}"
-            )
+            raise SchemaValidationError(errors=errors)
 
         self._data = data.copy()
         logger.info(
@@ -150,7 +153,7 @@ class EmotionCouplingAnalyzer:
             or ``"complex"``.
         """
         if self._data is None:
-            raise RuntimeError("Call fit() before predict_coupling_type().")
+            raise ModelNotFittedError("EmotionCouplingAnalyzer")
 
         subset = self._data.loc[
             self._data["participant_id"] == participant_id
@@ -202,6 +205,58 @@ class EmotionCouplingAnalyzer:
             window=self.volatility_window, min_periods=1
         ).std()
         return volatility.to_numpy()
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save the analyzer to disk with metadata.
+
+        Parameters
+        ----------
+        path : str
+            File path for the serialized model.
+        """
+        payload = {
+            "model": self,
+            "metadata": {
+                "model_version": _MODEL_VERSION,
+                "training_timestamp": datetime.now(timezone.utc).isoformat(),
+                "config": {
+                    "coupling_threshold": self.coupling_threshold,
+                    "volatility_window": self.volatility_window,
+                    "seed": self.seed,
+                },
+                "feature_names": list(_INPUT_SCHEMA.keys()),
+            },
+        }
+        joblib.dump(payload, path)
+        logger.info("EmotionCouplingAnalyzer saved to %s", path)
+
+    @classmethod
+    def load(cls, path: str) -> "EmotionCouplingAnalyzer":
+        """Load a previously saved analyzer from disk.
+
+        Parameters
+        ----------
+        path : str
+            File path to the serialized model.
+
+        Returns
+        -------
+        EmotionCouplingAnalyzer
+            The deserialized analyzer instance.
+        """
+        payload = joblib.load(path)
+        model = payload["model"]
+        logger.info(
+            "EmotionCouplingAnalyzer loaded from %s (version=%s, trained=%s)",
+            path,
+            payload["metadata"]["model_version"],
+            payload["metadata"]["training_timestamp"],
+        )
+        return model
 
     # ------------------------------------------------------------------
     # Private helpers

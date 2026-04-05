@@ -8,8 +8,10 @@ comparison tools for modelling well-being across the lifespan.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
@@ -23,9 +25,12 @@ except ImportError:  # pragma: no cover
     _HAS_STATSMODELS = False
 
 from src.ml.config import RANDOM_SEED, TRAJECTORY_PARAMS
+from src.ml.exceptions import InsufficientDataError
 from src.ml.utils import set_reproducible_seed
 
 logger = logging.getLogger(__name__)
+
+_MODEL_VERSION = "1.0.0"
 
 
 class TrajectoryAnalyzer:
@@ -184,6 +189,58 @@ class TrajectoryAnalyzer:
             "centroids": centroids,
             "inertia": float(self._cluster_model.inertia_),
         }
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save the analyzer to disk with metadata.
+
+        Parameters
+        ----------
+        path : str
+            File path for the serialized model.
+        """
+        payload = {
+            "model": self,
+            "metadata": {
+                "model_version": _MODEL_VERSION,
+                "training_timestamp": datetime.now(timezone.utc).isoformat(),
+                "config": {
+                    "max_degree": self.max_degree,
+                    "n_clusters": self.n_clusters,
+                    "seed": self.seed,
+                },
+                "feature_names": list(self._growth_models.keys()),
+            },
+        }
+        joblib.dump(payload, path)
+        logger.info("TrajectoryAnalyzer saved to %s", path)
+
+    @classmethod
+    def load(cls, path: str) -> "TrajectoryAnalyzer":
+        """Load a previously saved analyzer from disk.
+
+        Parameters
+        ----------
+        path : str
+            File path to the serialized model.
+
+        Returns
+        -------
+        TrajectoryAnalyzer
+            The deserialized analyzer instance.
+        """
+        payload = joblib.load(path)
+        model = payload["model"]
+        logger.info(
+            "TrajectoryAnalyzer loaded from %s (version=%s, trained=%s)",
+            path,
+            payload["metadata"]["model_version"],
+            payload["metadata"]["training_timestamp"],
+        )
+        return model
 
     def cross_cultural_comparison(
         self,

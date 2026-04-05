@@ -1,7 +1,12 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import { v4 as uuidv4 } from 'uuid';
 import { logger } from './utils/logger';
 import { authMiddleware } from './middleware/auth';
+import { swaggerRouter } from './openapi/setup';
+import { initTracing, shutdownTracing, metricsMiddleware, healthRouter as observabilityHealthRouter } from './observability';
 
 import participantsRouter from './routes/participants';
 import observationsRouter from './routes/observations';
@@ -10,63 +15,135 @@ import healthRouter from './routes/health';
 import lifespanRouter from './routes/lifespan';
 import cognitiveRouter from './routes/cognitive';
 import interventionsRouter from './routes/interventions';
+import insightsRouter from './routes/insights';
 
+// Initialize OpenTelemetry tracing before anything else
+if (process.env.OTEL_ENABLED !== 'false') {
+  initTracing();
+}
+
+// ---------------------------------------------------------------------------
+// Environment validation
+// ---------------------------------------------------------------------------
+const REQUIRED_ENV_VARS = ['PORT'];
+const OPTIONAL_ENV_VARS = ['CORS_ORIGIN', 'LOG_LEVEL', 'JWT_SECRET'];
+
+function validateEnvironment(): void {
+  const missing = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
+  if (missing.length > 0) {
+    logger.warn(`Missing recommended env vars: ${missing.join(', ')}. Using defaults.`);
+  }
+}
+
+validateEnvironment();
+
+// ---------------------------------------------------------------------------
+// App setup
+// ---------------------------------------------------------------------------
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // ---------------------------------------------------------------------------
-// Global middleware
+// Security headers
 // ---------------------------------------------------------------------------
-app.use(cors());
-app.use(express.json());
+app.use(helmet());
 
 // ---------------------------------------------------------------------------
-// Health check (unauthenticated)
+// CORS - restrict origins via env
 // ---------------------------------------------------------------------------
+const corsOrigin = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : undefined; // undefined = same-origin only in production; tests may override
 
-/**
- * GET /api/health
- * Simple health-check endpoint for readiness probes.
- */
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'wellab-api',
-    version: '0.1.0',
-    modules: [
-      'emotional-dynamics',
-      'health',
-      'lifespan-trajectory',
-      'cognitive-health',
-    ],
-    timestamp: new Date().toISOString(),
-  });
+app.use(
+  cors({
+    origin: corsOrigin || false,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    credentials: true,
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Body parsing with size limit
+// ---------------------------------------------------------------------------
+app.use(express.json({ limit: '1mb' }));
+
+// ---------------------------------------------------------------------------
+// Response compression
+// ---------------------------------------------------------------------------
+app.use(compression());
+
+// ---------------------------------------------------------------------------
+// Request ID middleware
+// ---------------------------------------------------------------------------
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const requestId = (req.headers['x-request-id'] as string) || uuidv4();
+  req.requestId = requestId;
+  res.setHeader('X-Request-ID', requestId);
+  next();
 });
 
 // ---------------------------------------------------------------------------
-// Auth middleware (applied to all /api routes below)
+// Request logging middleware
 // ---------------------------------------------------------------------------
-app.use('/api', authMiddleware);
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.info('request', {
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      requestId: req.requestId,
+    });
+  });
+
+  next();
+});
 
 // ---------------------------------------------------------------------------
-// Route registration
+// Metrics middleware
 // ---------------------------------------------------------------------------
-app.use('/api/participants', participantsRouter);
-app.use('/api', observationsRouter);
-app.use('/api', emotionalDynamicsRouter);
-app.use('/api', healthRouter);
-app.use('/api', lifespanRouter);
-app.use('/api', cognitiveRouter);
-app.use('/api/interventions', interventionsRouter);
+app.use(metricsMiddleware);
+
+// ---------------------------------------------------------------------------
+// API Documentation (unauthenticated)
+// ---------------------------------------------------------------------------
+app.use('/api/docs', swaggerRouter);
+
+// ---------------------------------------------------------------------------
+// Health & readiness probes (unauthenticated)
+// ---------------------------------------------------------------------------
+app.use('/api', observabilityHealthRouter);
+
+// ---------------------------------------------------------------------------
+// Auth middleware (applied to all /api/v1 routes below)
+// ---------------------------------------------------------------------------
+app.use('/api/v1', authMiddleware);
+
+// ---------------------------------------------------------------------------
+// Route registration (all under /api/v1)
+// ---------------------------------------------------------------------------
+app.use('/api/v1/participants', participantsRouter);
+app.use('/api/v1', observationsRouter);
+app.use('/api/v1', emotionalDynamicsRouter);
+app.use('/api/v1', healthRouter);
+app.use('/api/v1', lifespanRouter);
+app.use('/api/v1', cognitiveRouter);
+app.use('/api/v1/interventions', interventionsRouter);
+app.use('/api/v1', insightsRouter);
 
 // The interventions router also exposes a participant-scoped GET, so mount it
-// at the top level /api as well for the /participants/:id/interventions path.
-app.use('/api', interventionsRouter);
+// at the top level /api/v1 as well for the /participants/:id/interventions path.
+app.use('/api/v1', interventionsRouter);
 
 // ---------------------------------------------------------------------------
 // 404 fallback
 // ---------------------------------------------------------------------------
-app.use((_req, res) => {
+app.use((_req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     error: { code: 'NOT_FOUND', message: 'Endpoint not found' },
@@ -74,11 +151,54 @@ app.use((_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Start server
+// Global error handler
 // ---------------------------------------------------------------------------
-app.listen(PORT, () => {
-  logger.info(`WELLab API server running on port ${PORT}`);
-  logger.info('Registered modules: Emotional Dynamics, Health, Lifespan Trajectory, Cognitive Health');
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  logger.error('Unhandled error', {
+    message: err.message,
+    stack: err.stack,
+    method: req.method,
+    url: req.originalUrl,
+    requestId: req.requestId,
+  });
+
+  res.status(500).json({
+    success: false,
+    error: {
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'An unexpected error occurred',
+      requestId: req.requestId,
+    },
+  });
 });
+
+// ---------------------------------------------------------------------------
+// Start server with graceful shutdown
+// ---------------------------------------------------------------------------
+const server = app.listen(PORT, () => {
+  logger.info(`WELLab API server running on port ${PORT}`);
+  logger.info('API base path: /api/v1');
+  logger.info(
+    'Registered modules: Emotional Dynamics, Health, Lifespan Trajectory, Cognitive Health, AI Insights',
+  );
+});
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  logger.info(`${signal} received. Starting graceful shutdown...`);
+  await shutdownTracing();
+  server.close(() => {
+    logger.info('HTTP server closed. Exiting.');
+    process.exit(0);
+  });
+
+  // Force exit after 30 seconds if connections are not drained
+  setTimeout(() => {
+    logger.error('Graceful shutdown timed out. Forcing exit.');
+    process.exit(1);
+  }, 30_000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export default app;

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from src.ml.emotional_dynamics import EmotionCouplingAnalyzer
+from src.ml.exceptions import ModelNotFittedError, SchemaValidationError
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ class TestEmotionCouplingAnalyzer:
 
     def test_predict_coupling_type_before_fit_raises(self) -> None:
         analyzer = EmotionCouplingAnalyzer()
-        with pytest.raises(RuntimeError, match="fit"):
+        with pytest.raises(ModelNotFittedError):
             analyzer.predict_coupling_type("P000")
 
     def test_predict_coupling_type_unknown_participant(self) -> None:
@@ -119,7 +120,7 @@ class TestEmotionCouplingAnalyzer:
     def test_fit_rejects_bad_schema(self) -> None:
         bad_data = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
         analyzer = EmotionCouplingAnalyzer()
-        with pytest.raises(ValueError, match="schema validation"):
+        with pytest.raises(SchemaValidationError):
             analyzer.fit(bad_data)
 
     def test_coupling_types_constant(self) -> None:

@@ -9,20 +9,39 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
-    "express": "^4.19.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.0",
-    "winston": "^3.13.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@aws-sdk/client-dynamodb": "~3.1024.0",
+    "@aws-sdk/lib-dynamodb": "~3.1024.0",
+    "compression": "~1.7.5",
+    "cors": "~2.8.5",
+    "dotenv": "~16.4.7",
+    "express": "~4.21.2",
+    "helmet": "~7.2.0",
+    "uuid": "~9.0.1",
+    "winston": "~3.17.0",
+    "zod": "~3.24.2",
+    "swagger-ui-express": "~5.0.1",
+    "@opentelemetry/sdk-node": "~0.52.0",
+    "@opentelemetry/api": "~1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "~0.47.0",
+    "@opentelemetry/exporter-trace-otlp-http": "~0.52.0",
+    "@opentelemetry/sdk-trace-node": "~1.25.0",
+    "@opentelemetry/sdk-metrics": "~1.25.0",
+    "@opentelemetry/resources": "~1.25.0",
+    "@opentelemetry/semantic-conventions": "~1.25.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "nodemon": "^3.1.0",
-    "ts-node": "^10.9.0",
-    "@types/express": "^4.17.0",
-    "@types/cors": "^2.8.0",
-    "@types/node": "^20.12.0",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.1.0",
-    "@types/jest": "^29.5.0"
+    "@types/compression": "~1.7.5",
+    "@types/swagger-ui-express": "~4.1.6",
+    "@types/cors": "~2.8.17",
+    "@types/express": "~4.17.21",
+    "@types/jest": "~29.5.14",
+    "@types/node": "~20.17.0",
+    "@types/uuid": "~9.0.8",
+    "jest": "~29.7.0",
+    "nodemon": "~3.1.9",
+    "ts-jest": "~29.1.5",
+    "ts-node": "~10.9.2",
+    "typescript": "~5.9.3"
   }
 }

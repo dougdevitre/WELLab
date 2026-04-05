@@ -1,38 +1,41 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { validateBody } from '../middleware/validation';
 import { EmotionalDynamicsResult, ApiResponse } from '../types';
 import { logger } from '../utils/logger';
+import { asyncHandler } from '../utils/asyncHandler';
+import { getEmotionalDynamicsResult } from '../services/mockData';
 
 const router = Router();
+
+const analyzeSchema = z.object({
+  participantIds: z.array(z.string().min(1)).min(1),
+  period: z.object({
+    start: z.string().min(1),
+    end: z.string().min(1),
+  }),
+});
 
 /**
  * GET /participants/:id/emotional-dynamics
  * Retrieve emotion coupling analysis and volatility scores for a participant.
  */
-router.get('/participants/:id/emotional-dynamics', (req: Request, res: Response) => {
-  const { id } = req.params;
-  logger.info('Fetching emotional dynamics', { participantId: id });
+router.get(
+  '/participants/:id/emotional-dynamics',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    logger.info('Fetching emotional dynamics', { participantId: id });
 
-  const mockResult: EmotionalDynamicsResult = {
-    participantId: id,
-    period: { start: '2024-01-01', end: '2024-06-30' },
-    volatility: 0.42,
-    inertia: 0.68,
-    couplings: [
-      { emotionA: 'happiness', emotionB: 'energy', couplingStrength: 0.73, lag: 0, pValue: 0.001 },
-      { emotionA: 'anxiety', emotionB: 'sadness', couplingStrength: 0.58, lag: 1, pValue: 0.01 },
-      { emotionA: 'anger', emotionB: 'anxiety', couplingStrength: 0.35, lag: 0, pValue: 0.05 },
-    ],
-    granularity: 0.61,
-  };
+    const mockResult = getEmotionalDynamicsResult(id);
 
-  const response: ApiResponse<EmotionalDynamicsResult> = {
-    success: true,
-    data: mockResult,
-    meta: { timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    const response: ApiResponse<EmotionalDynamicsResult> = {
+      success: true,
+      data: mockResult,
+      meta: { timestamp: new Date().toISOString() },
+    };
+    res.json(response);
+  }),
+);
 
 /**
  * POST /emotional-dynamics/analyze
@@ -40,11 +43,8 @@ router.get('/participants/:id/emotional-dynamics', (req: Request, res: Response)
  */
 router.post(
   '/emotional-dynamics/analyze',
-  validateBody({
-    required: ['participantIds', 'period'],
-    types: { participantIds: 'array', period: 'object' },
-  }),
-  (req: Request, res: Response) => {
+  validateBody(analyzeSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { participantIds, period } = req.body;
     logger.info('Running emotional dynamics analysis', {
       participantCount: participantIds.length,
@@ -74,7 +74,7 @@ router.post(
       meta: { total: results.length, timestamp: new Date().toISOString() },
     };
     res.json(response);
-  },
+  }),
 );
 
 export default router;

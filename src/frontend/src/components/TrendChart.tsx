@@ -31,30 +31,35 @@ export default function TrendChart({
   return (
     <div className="bg-white rounded-xl shadow-sm border p-6">
       <h3 className="text-sm font-medium text-gray-500 mb-4">{title}</h3>
-      <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey="date"
-            tick={{ fontSize: 12 }}
-            tickFormatter={(v: string) => v.slice(5)}
-          />
-          <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
-          <Tooltip />
-          <Legend />
-          {lineConfig.map((cfg) => (
-            <Line
-              key={cfg.dataKey}
-              type="monotone"
-              dataKey={cfg.dataKey}
-              stroke={cfg.stroke}
-              name={cfg.name}
-              strokeWidth={cfg.dataKey === "overall" ? 2.5 : 1.5}
-              dot={false}
+      <div
+        role="img"
+        aria-label={`${title} line chart showing wellbeing scores over time`}
+      >
+        <ResponsiveContainer width="100%" height={height}>
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 12 }}
+              tickFormatter={(v: string) => v.slice(5)}
             />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
+            <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+            <Tooltip />
+            <Legend />
+            {lineConfig.map((cfg) => (
+              <Line
+                key={cfg.dataKey}
+                type="monotone"
+                dataKey={cfg.dataKey}
+                stroke={cfg.stroke}
+                name={cfg.name}
+                strokeWidth={cfg.dataKey === "overall" ? 2.5 : 1.5}
+                dot={false}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

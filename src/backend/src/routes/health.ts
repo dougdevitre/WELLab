@@ -1,49 +1,42 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { validateBody } from '../middleware/validation';
-import { HealthRecord, CausalAnalysisResult, ApiResponse } from '../types';
+import { CausalAnalysisResult, ApiResponse } from '../types';
 import { logger } from '../utils/logger';
+import { asyncHandler } from '../utils/asyncHandler';
+import { parsePagination, paginate } from '../utils/pagination';
+import { mockHealthRecords } from '../services/mockData';
 
 const router = Router();
+
+const causalAnalysisSchema = z.object({
+  participantIds: z.array(z.string().min(1)).min(1),
+  exposureVariable: z.string().min(1),
+  outcomeVariable: z.string().min(1),
+  covariates: z.array(z.string()).optional().default([]),
+  method: z.enum(['propensity-score', 'instrumental-variable', 'difference-in-differences']),
+});
 
 /**
  * GET /participants/:id/health-records
  * Retrieve health records for a participant, optionally filtered by domain.
  */
-router.get('/participants/:id/health-records', (req: Request, res: Response) => {
-  const { id } = req.params;
-  logger.info('Fetching health records', { participantId: id, domain: req.query.domain });
+router.get(
+  '/participants/:id/health-records',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    logger.info('Fetching health records', { participantId: id, domain: req.query.domain });
 
-  const mockRecords: HealthRecord[] = [
-    {
-      id: 'hr-001',
-      participantId: id,
-      recordDate: '2024-03-15',
-      domain: 'physical',
-      indicators: { bmi: 24.5, systolicBP: 128, diastolicBP: 82, gripStrength: 32 },
-      notes: 'Routine physical assessment',
-    },
-    {
-      id: 'hr-002',
-      participantId: id,
-      recordDate: '2024-03-15',
-      domain: 'mental',
-      indicators: { phq9: 4, gad7: 3, pss: 12 },
-      notes: 'Quarterly mental health screening',
-    },
-  ];
+    let results = mockHealthRecords.filter((r) => r.participantId === id);
+    if (req.query.domain) {
+      results = results.filter((r) => r.domain === req.query.domain);
+    }
 
-  let results = mockRecords;
-  if (req.query.domain) {
-    results = results.filter((r) => r.domain === req.query.domain);
-  }
-
-  const response: ApiResponse<HealthRecord[]> = {
-    success: true,
-    data: results,
-    meta: { total: results.length, timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    const params = parsePagination(req);
+    const response = paginate(results as unknown as Record<string, unknown>[], params);
+    res.json(response);
+  }),
+);
 
 /**
  * POST /health/causal-analysis
@@ -51,16 +44,8 @@ router.get('/participants/:id/health-records', (req: Request, res: Response) => 
  */
 router.post(
   '/health/causal-analysis',
-  validateBody({
-    required: ['participantIds', 'exposureVariable', 'outcomeVariable', 'method'],
-    types: {
-      participantIds: 'array',
-      exposureVariable: 'string',
-      outcomeVariable: 'string',
-      method: 'string',
-    },
-  }),
-  (req: Request, res: Response) => {
+  validateBody(causalAnalysisSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     logger.info('Running causal analysis', {
       exposure: req.body.exposureVariable,
       outcome: req.body.outcomeVariable,
@@ -81,7 +66,7 @@ router.post(
       meta: { timestamp: new Date().toISOString() },
     };
     res.json(response);
-  },
+  }),
 );
 
 export default router;
