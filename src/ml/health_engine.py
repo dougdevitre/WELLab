@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover
     _HAS_STATSMODELS = False
 
 from src.ml.config import HEALTH_ENGINE_PARAMS, RANDOM_SEED
-from src.ml.exceptions import InsufficientDataError, SchemaValidationError
+from src.ml.exceptions import InsufficientDataError  # noqa: F401
 from src.ml.utils import set_reproducible_seed
 
 logger = logging.getLogger(__name__)

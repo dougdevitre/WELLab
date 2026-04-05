@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import PolynomialFeatures
 
 # Stub import -- resolves once statsmodels is installed
 try:
@@ -25,7 +24,6 @@ except ImportError:  # pragma: no cover
     _HAS_STATSMODELS = False
 
 from src.ml.config import RANDOM_SEED, TRAJECTORY_PARAMS
-from src.ml.exceptions import InsufficientDataError
 from src.ml.utils import set_reproducible_seed
 
 logger = logging.getLogger(__name__)
