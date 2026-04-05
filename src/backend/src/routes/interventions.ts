@@ -1,55 +1,46 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { validateBody } from '../middleware/validation';
 import { Intervention, ApiResponse } from '../types';
 import { logger } from '../utils/logger';
+import { asyncHandler } from '../utils/asyncHandler';
+import { parsePagination, paginate } from '../utils/pagination';
+import { mockInterventions } from '../services/mockData';
 
 const router = Router();
 
-/** Mock interventions store */
-const mockInterventions: Intervention[] = [
-  {
-    id: 'int-001',
-    participantId: 'p-001',
-    type: 'behavioral',
-    name: 'Mindfulness-Based Stress Reduction',
-    startDate: '2024-03-01',
-    endDate: '2024-05-01',
-    status: 'completed',
-    frequency: '3x/week',
-    outcomes: { stressReduction: 0.35, wellBeingImprovement: 0.22 },
-  },
-  {
-    id: 'int-002',
-    participantId: 'p-001',
-    type: 'lifestyle',
-    name: 'Mediterranean Diet Program',
-    startDate: '2024-04-15',
-    status: 'active',
-    frequency: 'daily',
-    outcomes: {},
-  },
-];
+const createInterventionSchema = z.object({
+  participantId: z.string().min(1),
+  type: z.enum(['behavioral', 'pharmacological', 'cognitive-training', 'social', 'lifestyle']),
+  name: z.string().min(1),
+  startDate: z.string().min(1),
+  endDate: z.string().optional(),
+  status: z.enum(['planned', 'active', 'completed', 'discontinued']).optional().default('planned'),
+  dosage: z.string().optional(),
+  frequency: z.string().optional(),
+  outcomes: z.record(z.number()).optional().default({}),
+});
 
 /**
  * GET /participants/:id/interventions
  * Retrieve interventions assigned to a participant.
  */
-router.get('/participants/:id/interventions', (req: Request, res: Response) => {
-  const { id } = req.params;
-  logger.info('Fetching interventions', { participantId: id });
+router.get(
+  '/participants/:id/interventions',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    logger.info('Fetching interventions', { participantId: id });
 
-  let results = mockInterventions.filter((i) => i.participantId === id);
-  if (req.query.status) {
-    results = results.filter((i) => i.status === req.query.status);
-  }
+    let results = mockInterventions.filter((i) => i.participantId === id);
+    if (req.query.status) {
+      results = results.filter((i) => i.status === req.query.status);
+    }
 
-  const response: ApiResponse<Intervention[]> = {
-    success: true,
-    data: results,
-    meta: { total: results.length, timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    const params = parsePagination(req);
+    const response = paginate(results as unknown as Record<string, unknown>[], params);
+    res.json(response);
+  }),
+);
 
 /**
  * POST /interventions
@@ -57,16 +48,8 @@ router.get('/participants/:id/interventions', (req: Request, res: Response) => {
  */
 router.post(
   '/',
-  validateBody({
-    required: ['participantId', 'type', 'name', 'startDate'],
-    types: {
-      participantId: 'string',
-      type: 'string',
-      name: 'string',
-      startDate: 'string',
-    },
-  }),
-  (req: Request, res: Response) => {
+  validateBody(createInterventionSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     logger.info('Creating intervention', {
       participantId: req.body.participantId,
       name: req.body.name,
@@ -79,10 +62,10 @@ router.post(
       name: req.body.name,
       startDate: req.body.startDate,
       endDate: req.body.endDate,
-      status: req.body.status || 'planned',
+      status: req.body.status,
       dosage: req.body.dosage,
       frequency: req.body.frequency,
-      outcomes: req.body.outcomes || {},
+      outcomes: req.body.outcomes,
     };
 
     mockInterventions.push(newIntervention);
@@ -93,7 +76,7 @@ router.post(
       meta: { timestamp: new Date().toISOString() },
     };
     res.status(201).json(response);
-  },
+  }),
 );
 
 export default router;

@@ -1,81 +1,84 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { validateBody } from '../middleware/validation';
 import { Participant, ApiResponse } from '../types';
 import { logger } from '../utils/logger';
+import { asyncHandler } from '../utils/asyncHandler';
+import { parsePagination, paginate } from '../utils/pagination';
+import { mockParticipants } from '../services/mockData';
 
 const router = Router();
 
-/** Mock participant store */
-const mockParticipants: Participant[] = [
-  {
-    id: 'p-001',
-    externalId: 'WELL-2024-001',
-    firstName: 'Alice',
-    lastName: 'Chen',
-    dateOfBirth: '1955-03-12',
-    enrollmentDate: '2024-01-15',
-    cohort: 'aging-well-2024',
-    status: 'active',
-    metadata: { site: 'Boston', language: 'en' },
-  },
-  {
-    id: 'p-002',
-    externalId: 'WELL-2024-002',
-    firstName: 'Robert',
-    lastName: 'Johnson',
-    dateOfBirth: '1948-07-22',
-    enrollmentDate: '2024-02-01',
-    cohort: 'aging-well-2024',
-    status: 'active',
-    metadata: { site: 'Chicago', language: 'en' },
-  },
-];
+/** Regex for participant ID format */
+const ID_PATTERN = /^p-\d{3,}$/;
+
+const createParticipantSchema = z.object({
+  externalId: z.string().min(1),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  dateOfBirth: z.string().min(1),
+  cohort: z.string().min(1),
+  metadata: z.record(z.unknown()).optional(),
+});
 
 /**
  * GET /participants
  * List all participants with optional filtering by cohort or status.
  */
-router.get('/', (req: Request, res: Response) => {
-  logger.info('Listing participants', { query: req.query });
+router.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.info('Listing participants', { query: req.query });
 
-  let results = [...mockParticipants];
-  if (req.query.cohort) {
-    results = results.filter((p) => p.cohort === req.query.cohort);
-  }
-  if (req.query.status) {
-    results = results.filter((p) => p.status === req.query.status);
-  }
+    let results = [...mockParticipants];
+    if (req.query.cohort) {
+      results = results.filter((p) => p.cohort === req.query.cohort);
+    }
+    if (req.query.status) {
+      results = results.filter((p) => p.status === req.query.status);
+    }
 
-  const response: ApiResponse<Participant[]> = {
-    success: true,
-    data: results,
-    meta: { total: results.length, timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    const params = parsePagination(req);
+    const response = paginate(results as unknown as Record<string, unknown>[], params);
+    res.json(response);
+  }),
+);
 
 /**
  * GET /participants/:id
  * Retrieve a single participant by ID.
  */
-router.get('/:id', (req: Request, res: Response) => {
-  const participant = mockParticipants.find((p) => p.id === req.params.id);
+router.get(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
 
-  if (!participant) {
-    res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: `Participant ${req.params.id} not found` },
-    });
-    return;
-  }
+    if (!ID_PATTERN.test(id)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_ID', message: `Invalid participant ID format: ${id}` },
+      });
+      return;
+    }
 
-  const response: ApiResponse<Participant> = {
-    success: true,
-    data: participant,
-    meta: { timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    const participant = mockParticipants.find((p) => p.id === id);
+
+    if (!participant) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Participant ${id} not found` },
+      });
+      return;
+    }
+
+    const response: ApiResponse<Participant> = {
+      success: true,
+      data: participant,
+      meta: { timestamp: new Date().toISOString() },
+    };
+    res.json(response);
+  }),
+);
 
 /**
  * POST /participants
@@ -83,17 +86,8 @@ router.get('/:id', (req: Request, res: Response) => {
  */
 router.post(
   '/',
-  validateBody({
-    required: ['externalId', 'firstName', 'lastName', 'dateOfBirth', 'cohort'],
-    types: {
-      externalId: 'string',
-      firstName: 'string',
-      lastName: 'string',
-      dateOfBirth: 'string',
-      cohort: 'string',
-    },
-  }),
-  (req: Request, res: Response) => {
+  validateBody(createParticipantSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     logger.info('Creating participant', { externalId: req.body.externalId });
 
     const newParticipant: Participant = {
@@ -116,33 +110,46 @@ router.post(
       meta: { timestamp: new Date().toISOString() },
     };
     res.status(201).json(response);
-  },
+  }),
 );
 
 /**
  * PUT /participants/:id
  * Update an existing participant record.
  */
-router.put('/:id', (req: Request, res: Response) => {
-  const index = mockParticipants.findIndex((p) => p.id === req.params.id);
+router.put(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
 
-  if (index === -1) {
-    res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: `Participant ${req.params.id} not found` },
-    });
-    return;
-  }
+    if (!ID_PATTERN.test(id)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_ID', message: `Invalid participant ID format: ${id}` },
+      });
+      return;
+    }
 
-  mockParticipants[index] = { ...mockParticipants[index], ...req.body, id: req.params.id };
-  logger.info('Updated participant', { id: req.params.id });
+    const index = mockParticipants.findIndex((p) => p.id === id);
 
-  const response: ApiResponse<Participant> = {
-    success: true,
-    data: mockParticipants[index],
-    meta: { timestamp: new Date().toISOString() },
-  };
-  res.json(response);
-});
+    if (index === -1) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Participant ${id} not found` },
+      });
+      return;
+    }
+
+    mockParticipants[index] = { ...mockParticipants[index], ...req.body, id };
+    logger.info('Updated participant', { id });
+
+    const response: ApiResponse<Participant> = {
+      success: true,
+      data: mockParticipants[index],
+      meta: { timestamp: new Date().toISOString() },
+    };
+    res.json(response);
+  }),
+);
 
 export default router;

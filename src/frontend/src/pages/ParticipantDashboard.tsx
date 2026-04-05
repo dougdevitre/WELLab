@@ -1,10 +1,20 @@
 import WellbeingScoreCard from "../components/WellbeingScoreCard";
 import TrendChart from "../components/TrendChart";
+import Card from "../components/ui/Card";
+import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import Spinner from "../components/ui/Spinner";
+import SectionHeader from "../components/ui/SectionHeader";
+import {
+  useParticipantScore,
+  useParticipantTrend,
+  useParticipantInsights,
+} from "../hooks/useParticipant";
 import type { TrendPoint, Insight, WellbeingDomain } from "../types";
 
-// ---------- placeholder data ----------
+// ---------- placeholder data (used as fallback when API is unavailable) ----------
 
-const currentScore = {
+const fallbackScore = {
   overall: 74,
   domains: {
     physical: 82,
@@ -16,7 +26,7 @@ const currentScore = {
   confidence: 0.87,
 };
 
-const trendData: TrendPoint[] = Array.from({ length: 14 }, (_, i) => {
+const fallbackTrendData: TrendPoint[] = Array.from({ length: 14 }, (_, i) => {
   const d = new Date();
   d.setDate(d.getDate() - (13 - i));
   return {
@@ -28,7 +38,7 @@ const trendData: TrendPoint[] = Array.from({ length: 14 }, (_, i) => {
   };
 });
 
-const insights: Insight[] = [
+const fallbackInsights: Insight[] = [
   {
     id: "1",
     title: "Strong social connections",
@@ -67,24 +77,71 @@ const insights: Insight[] = [
   },
 ];
 
-const badgeColor: Record<Insight["type"], string> = {
-  strength: "bg-wellab-100 text-wellab-800",
-  "growth-area": "bg-amber-100 text-amber-800",
-  pattern: "bg-blue-100 text-blue-800",
+const badgeColorMap: Record<Insight["type"], "green" | "amber" | "blue"> = {
+  strength: "green",
+  "growth-area": "amber",
+  pattern: "blue",
 };
 
 // ---------- component ----------
 
+const PARTICIPANT_ID = "demo-participant";
+
 export default function ParticipantDashboard() {
+  const scoreApi = useParticipantScore(PARTICIPANT_ID);
+  const trendApi = useParticipantTrend(PARTICIPANT_ID, 14);
+  const insightsApi = useParticipantInsights(PARTICIPANT_ID);
+
+  // Use API data if available, otherwise fall back to placeholder
+  const score = scoreApi.data ?? fallbackScore;
+  const trendData = trendApi.data ?? fallbackTrendData;
+  const insights = insightsApi.data ?? fallbackInsights;
+
+  const isLoading = scoreApi.loading && trendApi.loading && insightsApi.loading;
+  const hasError = scoreApi.error || trendApi.error || insightsApi.error;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">Participant Experience</h1>
 
+      {hasError && (
+        <Card className="border-amber-200 bg-amber-50">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-amber-800">
+              Could not load live data. Showing sample data instead.
+            </p>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                scoreApi.retry();
+                trendApi.retry();
+                insightsApi.retry();
+              }}
+              className="text-amber-800 hover:bg-amber-100 focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
+            >
+              Retry
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <WellbeingScoreCard
-          overall={currentScore.overall}
-          domains={currentScore.domains}
-          confidence={currentScore.confidence}
+          overall={score.overall}
+          domains={
+            "domains" in score
+              ? (score.domains as Partial<Record<WellbeingDomain, number>>)
+              : undefined
+          }
+          confidence={score.confidence}
         />
 
         <div className="lg:col-span-2">
@@ -94,21 +151,14 @@ export default function ParticipantDashboard() {
 
       {/* Strength-framed insights */}
       <section>
-        <h2 className="text-lg font-semibold mb-4">
-          Strength-Framed Insights
-        </h2>
+        <SectionHeader title="Strength-Framed Insights" className="mb-4" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {insights.map((ins) => (
-            <div
-              key={ins.id}
-              className="bg-white rounded-xl shadow-sm border p-5 flex flex-col gap-2"
-            >
+            <Card key={ins.id} className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
-                <span
-                  className={`text-xs font-medium px-2 py-0.5 rounded-full ${badgeColor[ins.type]}`}
-                >
+                <Badge color={badgeColorMap[ins.type]}>
                   {ins.type === "growth-area" ? "growth area" : ins.type}
-                </span>
+                </Badge>
                 <span className="text-xs text-gray-400 capitalize">
                   {ins.domain}
                 </span>
@@ -118,7 +168,7 @@ export default function ParticipantDashboard() {
               <p className="text-xs text-gray-400 mt-auto">
                 Confidence: {Math.round(ins.confidence * 100)}%
               </p>
-            </div>
+            </Card>
           ))}
         </div>
       </section>

@@ -10,6 +10,9 @@ Submodules
 - health_engine      : Causal behavioral & physiological health modeling
 - lifespan_trajectory: Growth-curve and trajectory clustering across the lifespan
 - cognitive_health   : Cognitive risk prediction and dementia prevention
+- drift              : Data drift detection between reference and production data
+- serve              : FastAPI serving layer for model predictions
+- exceptions         : Custom exception types for the ML pipeline
 - utils              : Shared data-loading and reproducibility helpers
 - config             : ML configuration constants
 """
@@ -21,6 +24,9 @@ __all__ = [
     "health_engine",
     "lifespan_trajectory",
     "cognitive_health",
+    "drift",
+    "serve",
+    "exceptions",
     "utils",
     "config",
 ]

@@ -1,3 +1,6 @@
+import { memo } from "react";
+import Card from "../components/ui/Card";
+import Badge from "../components/ui/Badge";
 import type { CohortSummary, WellbeingDomain } from "../types";
 
 // ---------- placeholder data ----------
@@ -44,6 +47,81 @@ const qualityMetrics = [
   { label: "Outlier flags", value: "12", status: "warn" },
 ];
 
+// ---------- memoized subcomponents ----------
+
+const CouplingHeatmap = memo(function CouplingHeatmap() {
+  return (
+    <Card title="Domain Coupling Heatmap">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr>
+              <th />
+              {domains.map((d) => (
+                <th key={d} className="px-2 py-1 capitalize font-medium text-gray-500">
+                  {d.slice(0, 4)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {domains.map((rowD, ri) => (
+              <tr key={rowD}>
+                <td className="pr-2 py-1 capitalize font-medium text-gray-500 text-right">
+                  {rowD.slice(0, 4)}
+                </td>
+                {couplingMatrix[ri].map((val, ci) => (
+                  <td key={ci} className="px-1 py-1">
+                    <div
+                      className={`w-full text-center py-1 rounded ${heatColor(val)}`}
+                    >
+                      {val.toFixed(2)}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+});
+
+const TrajectoryClusters = memo(function TrajectoryClusters() {
+  const total = clusterLabels.reduce((s, x) => s + x.count, 0);
+
+  return (
+    <Card title="Trajectory Clusters">
+      <div className="space-y-3">
+        {clusterLabels.map((cl) => {
+          const pct = Math.round((cl.count / total) * 100);
+          return (
+            <div key={cl.id} className="flex items-center gap-3">
+              <span
+                className={`w-3 h-3 rounded-full ${cl.color} shrink-0`}
+              />
+              <span className="text-sm font-medium w-36">{cl.label}</span>
+              <div className="flex-1 bg-gray-100 rounded-full h-3">
+                <div
+                  className={`${cl.color} h-3 rounded-full`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="text-sm text-gray-600 w-20 text-right">
+                {cl.count} ({pct}%)
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-xs text-gray-400 mt-4">
+        Clusters derived from 30-day trajectory similarity (DTW + k-means).
+      </p>
+    </Card>
+  );
+});
+
 // ---------- component ----------
 
 export default function ResearcherDashboard() {
@@ -52,15 +130,12 @@ export default function ResearcherDashboard() {
       <h1 className="text-2xl font-bold">Researcher Dashboard</h1>
 
       {/* Cohort selector */}
-      <section className="bg-white rounded-xl shadow-sm border p-6">
-        <h2 className="text-sm font-medium text-gray-500 mb-3">
-          Cohort Selector
-        </h2>
+      <Card title="Cohort Selector">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {cohorts.map((c) => (
             <button
               key={c.cohortId}
-              className="text-left border rounded-lg p-4 hover:border-wellab-400 hover:shadow transition-all"
+              className="text-left border rounded-lg p-4 hover:border-wellab-400 hover:shadow transition-all focus:outline-none focus:ring-2 focus:ring-wellab-500 focus:ring-offset-2"
             >
               <p className="font-medium text-gray-900">{c.name}</p>
               <p className="text-sm text-gray-500 mt-1">
@@ -80,87 +155,15 @@ export default function ResearcherDashboard() {
             </button>
           ))}
         </div>
-      </section>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Coupling heatmap */}
-        <section className="bg-white rounded-xl shadow-sm border p-6">
-          <h2 className="text-sm font-medium text-gray-500 mb-4">
-            Domain Coupling Heatmap
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr>
-                  <th />
-                  {domains.map((d) => (
-                    <th key={d} className="px-2 py-1 capitalize font-medium text-gray-500">
-                      {d.slice(0, 4)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {domains.map((rowD, ri) => (
-                  <tr key={rowD}>
-                    <td className="pr-2 py-1 capitalize font-medium text-gray-500 text-right">
-                      {rowD.slice(0, 4)}
-                    </td>
-                    {couplingMatrix[ri].map((val, ci) => (
-                      <td key={ci} className="px-1 py-1">
-                        <div
-                          className={`w-full text-center py-1 rounded ${heatColor(val)}`}
-                        >
-                          {val.toFixed(2)}
-                        </div>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* Trajectory clusters */}
-        <section className="bg-white rounded-xl shadow-sm border p-6">
-          <h2 className="text-sm font-medium text-gray-500 mb-4">
-            Trajectory Clusters
-          </h2>
-          <div className="space-y-3">
-            {clusterLabels.map((cl) => {
-              const total = clusterLabels.reduce((s, x) => s + x.count, 0);
-              const pct = Math.round((cl.count / total) * 100);
-              return (
-                <div key={cl.id} className="flex items-center gap-3">
-                  <span
-                    className={`w-3 h-3 rounded-full ${cl.color} shrink-0`}
-                  />
-                  <span className="text-sm font-medium w-36">{cl.label}</span>
-                  <div className="flex-1 bg-gray-100 rounded-full h-3">
-                    <div
-                      className={`${cl.color} h-3 rounded-full`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="text-sm text-gray-600 w-20 text-right">
-                    {cl.count} ({pct}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-xs text-gray-400 mt-4">
-            Clusters derived from 30-day trajectory similarity (DTW + k-means).
-          </p>
-        </section>
+        <CouplingHeatmap />
+        <TrajectoryClusters />
       </div>
 
       {/* Data quality monitor */}
-      <section className="bg-white rounded-xl shadow-sm border p-6">
-        <h2 className="text-sm font-medium text-gray-500 mb-4">
-          Data Quality Monitor
-        </h2>
+      <Card title="Data Quality Monitor">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {qualityMetrics.map((m) => (
             <div
@@ -173,19 +176,13 @@ export default function ResearcherDashboard() {
               <span className="text-xs text-gray-500 text-center">
                 {m.label}
               </span>
-              <span
-                className={`mt-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                  m.status === "good"
-                    ? "bg-wellab-100 text-wellab-700"
-                    : "bg-amber-100 text-amber-700"
-                }`}
-              >
+              <Badge color={m.status === "good" ? "green" : "amber"}>
                 {m.status}
-              </span>
+              </Badge>
             </div>
           ))}
         </div>
-      </section>
+      </Card>
     </div>
   );
 }

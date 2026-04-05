@@ -8,6 +8,8 @@ validation used by every engine module.
 from __future__ import annotations
 
 import logging
+import os
+import random
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -30,11 +32,20 @@ def set_reproducible_seed(seed: int = RANDOM_SEED) -> None:
     seed : int
         The seed value to use across all RNGs.
     """
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     logger.info("NumPy random seed set to %d", seed)
 
-    # TODO: Add torch.manual_seed(seed) when PyTorch is added as a dependency
-    # TODO: Add tf.random.set_seed(seed) if TensorFlow is ever used
+    try:
+        import torch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        logger.info("PyTorch random seeds set to %d", seed)
+    except ImportError:
+        pass
 
 
 # ---------------------------------------------------------------------------

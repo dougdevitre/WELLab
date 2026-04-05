@@ -11,24 +11,49 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-node@60ecd5dd1b667a8e52112f999ebc6e0c8267832c # v4.0.2
         with:
           node-version: 20
-          cache: npm
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: node-modules-
       - run: npm ci
       - run: npm run lint
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-node@60ecd5dd1b667a8e52112f999ebc6e0c8267832c # v4.0.2
+        with:
+          node-version: 20
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: node-modules-
+      - run: npm ci
+      - run: npx tsc --noEmit
 
   test-frontend:
     name: Test Frontend
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-node@60ecd5dd1b667a8e52112f999ebc6e0c8267832c # v4.0.2
         with:
           node-version: 20
-          cache: npm
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: node-modules-
       - run: npm ci
       - run: npm run build --workspace=src/frontend
 
@@ -37,11 +62,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-node@60ecd5dd1b667a8e52112f999ebc6e0c8267832c # v4.0.2
         with:
           node-version: 20
-          cache: npm
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: node-modules-
       - run: npm ci
       - run: npm run test --workspace=src/backend
 
@@ -50,25 +79,54 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
         with:
           python-version: '3.11'
-          cache: pip
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: pip-
       - run: pip install -r requirements.txt
-      - run: python -m pytest src/ml/ --tb=short -q || true
-      - run: python -m flake8 src/ml/ --max-line-length=120 || true
-      - run: python -m mypy src/ml/ --ignore-missing-imports || true
+      - run: python -m pytest src/ml/ --tb=short -q --cov=src/ml --cov-report=xml --cov-fail-under=70
+      - run: python -m flake8 src/ml/ --max-line-length=120
+      - run: python -m mypy src/ml/ --ignore-missing-imports
+
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-node@60ecd5dd1b667a8e52112f999ebc6e0c8267832c # v4.0.2
+        with:
+          node-version: 20
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: node-modules-
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test-frontend, test-backend, test-ml]
+    needs: [test-frontend, test-backend, test-ml, type-check, security]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/setup-node@60ecd5dd1b667a8e52112f999ebc6e0c8267832c # v4.0.2
         with:
           node-version: 20
-          cache: npm
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: node-modules-
       - run: npm ci
       - run: npm run build

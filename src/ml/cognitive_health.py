@@ -8,8 +8,10 @@ analysis for cognitive decline and dementia onset.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
@@ -24,9 +26,12 @@ except ImportError:  # pragma: no cover
     _HAS_LIFELINES = False
 
 from src.ml.config import COGNITIVE_RISK_PARAMS, RANDOM_SEED
+from src.ml.exceptions import ModelNotFittedError
 from src.ml.utils import set_reproducible_seed
 
 logger = logging.getLogger(__name__)
+
+_MODEL_VERSION = "1.0.0"
 
 
 class CognitiveRiskModel:
@@ -136,7 +141,7 @@ class CognitiveRiskModel:
             ``high_risk`` columns.
         """
         if not self.is_fitted:
-            raise RuntimeError("Call fit() before predict_risk().")
+            raise ModelNotFittedError("CognitiveRiskModel")
 
         X = participant_data[self._feature_names].values
         probas = self._classifier.predict_proba(X)[:, 1]
@@ -177,7 +182,7 @@ class CognitiveRiskModel:
             (most negative importance = most protective).
         """
         if not self.is_fitted:
-            raise RuntimeError("Call fit() before identify_protective_factors().")
+            raise ModelNotFittedError("CognitiveRiskModel")
 
         X = data[self._feature_names]
         y = data[target_col]
@@ -204,6 +209,59 @@ class CognitiveRiskModel:
         protective = [(name, float(score)) for name, score in ranked[:top_n]]
         logger.info("Top %d protective factors: %s", top_n, protective)
         return protective
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save the model to disk with metadata.
+
+        Parameters
+        ----------
+        path : str
+            File path for the serialized model.
+        """
+        payload = {
+            "model": self,
+            "metadata": {
+                "model_version": _MODEL_VERSION,
+                "training_timestamp": datetime.now(timezone.utc).isoformat(),
+                "config": {
+                    "risk_threshold": self.risk_threshold,
+                    "seed": self.seed,
+                    "n_estimators": self._classifier.n_estimators,
+                    "max_depth": self._classifier.max_depth,
+                },
+                "feature_names": list(self._feature_names),
+            },
+        }
+        joblib.dump(payload, path)
+        logger.info("CognitiveRiskModel saved to %s", path)
+
+    @classmethod
+    def load(cls, path: str) -> "CognitiveRiskModel":
+        """Load a previously saved model from disk.
+
+        Parameters
+        ----------
+        path : str
+            File path to the serialized model.
+
+        Returns
+        -------
+        CognitiveRiskModel
+            The deserialized model instance.
+        """
+        payload = joblib.load(path)
+        model = payload["model"]
+        logger.info(
+            "CognitiveRiskModel loaded from %s (version=%s, trained=%s)",
+            path,
+            payload["metadata"]["model_version"],
+            payload["metadata"]["training_timestamp"],
+        )
+        return model
 
     def survival_analysis(
         self,

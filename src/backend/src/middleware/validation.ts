@@ -1,65 +1,66 @@
 import { Request, Response, NextFunction } from 'express';
-import { ValidationSchema } from '../types';
+import { ZodSchema, ZodError } from 'zod';
 
 /**
- * Creates a request body validation middleware from a simple schema definition.
- * Checks required fields and basic type constraints.
- *
- * @param schema - Validation schema specifying required fields and expected types
- * @returns Express middleware that validates req.body against the schema
+ * Format Zod validation errors into a human-readable list.
  */
-export function validateBody(schema: ValidationSchema) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const body = req.body;
+function formatZodErrors(error: ZodError): string[] {
+  return error.issues.map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+    return `${path}: ${issue.message}`;
+  });
+}
 
-    if (!body || typeof body !== 'object') {
+/**
+ * Creates a middleware that validates `req.body` against a Zod schema.
+ * On success the parsed (and potentially transformed) body replaces `req.body`.
+ */
+export function validateBody(schema: ZodSchema) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.body);
+
+    if (!result.success) {
+      const details = formatZodErrors(result.error);
       res.status(400).json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Request body must be a JSON object' },
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Request body validation failed: ${details.join('; ')}`,
+          details,
+        },
       });
       return;
     }
 
-    // Check required fields
-    if (schema.required) {
-      const missing = schema.required.filter((field) => !(field in body));
-      if (missing.length > 0) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: `Missing required fields: ${missing.join(', ')}`,
-            details: { missingFields: missing },
-          },
-        });
-        return;
-      }
+    // Replace body with the parsed & coerced output
+    req.body = result.data;
+    next();
+  };
+}
+
+/**
+ * Creates a middleware that validates `req.query` against a Zod schema.
+ * On success the parsed query replaces `req.query`.
+ */
+export function validateQuery(schema: ZodSchema) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.query);
+
+    if (!result.success) {
+      const details = formatZodErrors(result.error);
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Query parameter validation failed: ${details.join('; ')}`,
+          details,
+        },
+      });
+      return;
     }
 
-    // Check types
-    if (schema.types) {
-      const typeErrors: string[] = [];
-      for (const [field, expectedType] of Object.entries(schema.types)) {
-        if (!(field in body)) continue; // skip missing optional fields
-        const value = body[field];
-        const actualType = Array.isArray(value) ? 'array' : typeof value;
-        if (actualType !== expectedType) {
-          typeErrors.push(`${field}: expected ${expectedType}, got ${actualType}`);
-        }
-      }
-      if (typeErrors.length > 0) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: `Type errors: ${typeErrors.join('; ')}`,
-            details: { typeErrors },
-          },
-        });
-        return;
-      }
-    }
-
+    // Overwrite query with parsed values
+    req.query = result.data;
     next();
   };
 }
