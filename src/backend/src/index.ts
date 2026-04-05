@@ -5,6 +5,8 @@ import compression from 'compression';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from './utils/logger';
 import { authMiddleware } from './middleware/auth';
+import { swaggerRouter } from './openapi/setup';
+import { initTracing, shutdownTracing, metricsMiddleware, healthRouter as observabilityHealthRouter } from './observability';
 
 import participantsRouter from './routes/participants';
 import observationsRouter from './routes/observations';
@@ -14,6 +16,11 @@ import lifespanRouter from './routes/lifespan';
 import cognitiveRouter from './routes/cognitive';
 import interventionsRouter from './routes/interventions';
 import insightsRouter from './routes/insights';
+
+// Initialize OpenTelemetry tracing before anything else
+if (process.env.OTEL_ENABLED !== 'false') {
+  initTracing();
+}
 
 // ---------------------------------------------------------------------------
 // Environment validation
@@ -98,28 +105,19 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // ---------------------------------------------------------------------------
-// Health check (unauthenticated) - kept outside versioned prefix for probes
+// Metrics middleware
 // ---------------------------------------------------------------------------
+app.use(metricsMiddleware);
 
-/**
- * GET /api/v1/health
- * Simple health-check endpoint for readiness probes.
- */
-app.get('/api/v1/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    service: 'wellab-api',
-    version: '1.0.0',
-    modules: [
-      'emotional-dynamics',
-      'health',
-      'lifespan-trajectory',
-      'cognitive-health',
-      'ai-insights',
-    ],
-    timestamp: new Date().toISOString(),
-  });
-});
+// ---------------------------------------------------------------------------
+// API Documentation (unauthenticated)
+// ---------------------------------------------------------------------------
+app.use('/api/docs', swaggerRouter);
+
+// ---------------------------------------------------------------------------
+// Health & readiness probes (unauthenticated)
+// ---------------------------------------------------------------------------
+app.use('/api', observabilityHealthRouter);
 
 // ---------------------------------------------------------------------------
 // Auth middleware (applied to all /api/v1 routes below)
@@ -185,8 +183,9 @@ const server = app.listen(PORT, () => {
   );
 });
 
-function gracefulShutdown(signal: string): void {
+async function gracefulShutdown(signal: string): Promise<void> {
   logger.info(`${signal} received. Starting graceful shutdown...`);
+  await shutdownTracing();
   server.close(() => {
     logger.info('HTTP server closed. Exiting.');
     process.exit(0);
