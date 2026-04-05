@@ -1,10 +1,10 @@
 # Core ML
 numpy==1.26.4
 pandas==2.2.2
-scikit-learn==1.4.2
+scikit-learn==1.5.2
 statsmodels==0.14.2
 dowhy==0.11.1
-torch==2.2.2
+torch==2.6.0
 lifelines==0.29.0
 anthropic==0.25.0
 pyyaml==6.0.1
@@ -12,7 +12,7 @@ joblib==1.4.2
 pydantic==2.7.0
 
 # API Serving
-fastapi==0.111.0
+fastapi==0.115.6
 uvicorn==0.29.0
 
 # Testing
@@ -20,7 +20,7 @@ pytest==8.2.0
 hypothesis==6.100.0
 
 # Code Quality
-black==24.4.2
+black==25.1.0
 mypy==1.10.0
 flake8==7.0.0
 
