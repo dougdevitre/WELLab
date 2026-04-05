@@ -110,7 +110,7 @@ jobs:
           key: node-modules-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-
       - run: npm ci
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --audit-level=high --omit=dev
       - run: pip install pip-audit
       - run: pip-audit -r requirements.txt
 

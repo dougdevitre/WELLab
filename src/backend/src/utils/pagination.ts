@@ -40,7 +40,7 @@ export function paginate<T extends Record<string, unknown>>(
   items: T[],
   params: PaginationParams,
 ): PaginatedResponse<T> {
-  let sorted = [...items];
+  const sorted = [...items];
 
   if (params.sortBy) {
     const key = params.sortBy;
