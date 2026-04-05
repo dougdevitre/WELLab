@@ -3,7 +3,6 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { ConsoleSpanExporter, BatchSpanProcessor, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { Resource } from '@opentelemetry/resources';
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { logger } from '../utils/logger';
 
@@ -19,8 +18,8 @@ export function initTracing(): void {
   const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
 
   const resource = new Resource({
-    [ATTR_SERVICE_NAME]: 'wellab-api',
-    [ATTR_SERVICE_VERSION]: '1.0.0',
+    'service.name': 'wellab-api',
+    'service.version': '1.0.0',
     'deployment.environment': process.env.NODE_ENV || 'development',
   });
 

@@ -109,8 +109,6 @@ _MODEL_VERSIONS: Dict[str, str] = {
 
 def _load_models() -> None:
     """Load models into the registry on startup."""
-    import pandas as pd
-
     from src.ml.cognitive_health import CognitiveRiskModel
     from src.ml.emotional_dynamics import EmotionCouplingAnalyzer
     from src.ml.lifespan_trajectory import TrajectoryAnalyzer
@@ -149,7 +147,7 @@ async def predict_emotional_dynamics(request: EmotionalDynamicsRequest) -> Emoti
     """Run emotion coupling analysis on provided affect data."""
     import pandas as pd
 
-    from src.ml.exceptions import ModelNotFittedError, SchemaValidationError
+    from src.ml.exceptions import SchemaValidationError
 
     analyzer = _MODEL_REGISTRY.get("emotional_dynamics")
     if analyzer is None:

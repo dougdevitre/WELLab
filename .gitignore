@@ -64,3 +64,4 @@ Thumbs.db
 .cache/
 tmp/
 temp/
+coverage.xml
