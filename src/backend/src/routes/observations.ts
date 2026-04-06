@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { asyncHandler } from '../utils/asyncHandler';
 import { parsePagination, paginate } from '../utils/pagination';
 import { mockObservations } from '../services/mockData';
+import { observationRepository } from '../db';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ const createObservationSchema = z.object({
 
 /**
  * GET /participants/:id/observations
- * List EMA observations for a given participant.
+ * List EMA observations from DynamoDB, with fallback to mock data.
  */
 router.get(
   '/participants/:id/observations',
@@ -32,7 +33,17 @@ router.get(
     const { id } = req.params;
     logger.info('Fetching observations', { participantId: id });
 
-    const results = mockObservations.filter((o) => o.participantId === id);
+    let results;
+    try {
+      const page = await observationRepository.listByParticipant(id, {
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+      });
+      results = page.items;
+    } catch (err) {
+      logger.warn('DynamoDB observation query failed, using mock data', { error: (err as Error).message });
+      results = mockObservations.filter((o) => o.participantId === id);
+    }
 
     const params = parsePagination(req);
     const response = paginate(results as unknown as Record<string, unknown>[], params);
@@ -42,7 +53,7 @@ router.get(
 
 /**
  * POST /participants/:id/observations
- * Record a new EMA observation for a participant.
+ * Record a new EMA observation, persisting to DynamoDB with mock fallback.
  */
 router.post(
   '/participants/:id/observations',
@@ -51,16 +62,27 @@ router.post(
     const { id } = req.params;
     logger.info('Recording observation', { participantId: id, source: req.body.source });
 
-    const newObs: Observation = {
-      id: `obs-${String(mockObservations.length + 1).padStart(3, '0')}`,
-      participantId: id,
-      timestamp: new Date().toISOString(),
-      source: req.body.source,
-      measures: req.body.measures,
-      context: req.body.context || {},
-    };
+    let newObs: Observation;
 
-    mockObservations.push(newObs);
+    try {
+      newObs = await observationRepository.create(id, {
+        timestamp: new Date().toISOString(),
+        source: req.body.source,
+        measures: req.body.measures,
+        context: req.body.context || {},
+      });
+    } catch (err) {
+      logger.warn('DynamoDB observation create failed, using in-memory', { error: (err as Error).message });
+      newObs = {
+        id: `obs-${String(mockObservations.length + 1).padStart(3, '0')}`,
+        participantId: id,
+        timestamp: new Date().toISOString(),
+        source: req.body.source,
+        measures: req.body.measures,
+        context: req.body.context || {},
+      };
+      mockObservations.push(newObs);
+    }
 
     const response: ApiResponse<Observation> = {
       success: true,

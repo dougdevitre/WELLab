@@ -28,6 +28,8 @@ import {
   ResearchSummaryResponse,
   PolicyBriefResponse,
 } from '../services/claude/types';
+import { observationRepository } from '../db';
+import { mlClient } from '../services/mlClient';
 
 const router = Router();
 
@@ -127,17 +129,76 @@ router.get(
       return;
     }
 
-    // Parse emotional dynamics context from query string
+    // Try to auto-populate emotional dynamics from ML service when not provided
+    let couplingType = req.query.couplingType as string | undefined;
+    let couplingStrength = req.query.couplingStrength ? Number(req.query.couplingStrength) : undefined;
+    let volatility = req.query.volatility ? Number(req.query.volatility) : undefined;
+    let inertia = req.query.inertia ? Number(req.query.inertia) : undefined;
+    let recentTrend: Array<{ date: string; positiveAffect: number; negativeAffect: number; lifeSatisfaction: number }> = [];
+
+    if (req.query.recentTrend) {
+      try { recentTrend = JSON.parse(req.query.recentTrend as string); } catch { /* ignore */ }
+    }
+
+    // Auto-enrich from ML service + DynamoDB when params missing
+    if (!couplingType || couplingStrength === undefined || volatility === undefined) {
+      try {
+        if (await mlClient.isAvailable()) {
+          const obsPage = await observationRepository.listByParticipant(id, { limit: 100 });
+          const observations = obsPage.items;
+
+          if (observations.length >= 3) {
+            const pids = observations.map(() => id);
+            const times = observations.map((_, i) => i);
+            const pa = observations.map((o) => Number(o.measures.happiness ?? o.measures.positive_affect ?? 5));
+            const na = observations.map((o) => Number(o.measures.sadness ?? o.measures.negative_affect ?? 3));
+
+            const mlResult = await mlClient.analyzeEmotionalDynamics({
+              participantIds: pids,
+              time: times,
+              positiveAffect: pa,
+              negativeAffect: na,
+            });
+
+            const volResult = await mlClient.computeVolatility({
+              participantId: id,
+              timeSeries: pa,
+            });
+
+            const detectedType = mlResult.coupling_results[id] ?? 'decoupled';
+            couplingType = couplingType ?? detectedType;
+            couplingStrength = couplingStrength ?? (detectedType === 'positive' ? 0.7 : detectedType === 'negative' ? -0.7 : 0.1);
+            volatility = volatility ?? volResult.mean_volatility;
+            inertia = inertia ?? 0.5;
+
+            // Build trend data from recent observations
+            if (recentTrend.length === 0) {
+              recentTrend = observations.slice(-14).map((o) => ({
+                date: o.timestamp,
+                positiveAffect: Number(o.measures.happiness ?? o.measures.positive_affect ?? 5),
+                negativeAffect: Number(o.measures.sadness ?? o.measures.negative_affect ?? 3),
+                lifeSatisfaction: Number(o.measures.life_satisfaction ?? 6),
+              }));
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn('Failed to auto-enrich insight context from ML', { error: (err as Error).message });
+      }
+    }
+
+    // Apply defaults for any still-missing values
+    couplingType = couplingType ?? 'decoupled';
+    couplingStrength = couplingStrength ?? 0.1;
+    volatility = volatility ?? 0.4;
+    inertia = inertia ?? 0.5;
+
     const parseResult = participantInsightQuerySchema.safeParse({
-      couplingType: req.query.couplingType,
-      couplingStrength: req.query.couplingStrength
-        ? Number(req.query.couplingStrength)
-        : undefined,
-      volatility: req.query.volatility ? Number(req.query.volatility) : undefined,
-      inertia: req.query.inertia ? Number(req.query.inertia) : undefined,
-      recentTrend: req.query.recentTrend
-        ? JSON.parse(req.query.recentTrend as string)
-        : [],
+      couplingType,
+      couplingStrength,
+      volatility,
+      inertia,
+      recentTrend,
     });
 
     if (!parseResult.success) {
@@ -151,9 +212,6 @@ router.get(
       });
       return;
     }
-
-    const { couplingType, couplingStrength, volatility, inertia, recentTrend } =
-      parseResult.data;
 
     logger.info('Generating participant insights', { participantId: id });
 

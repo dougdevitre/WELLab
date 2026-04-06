@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { asyncHandler } from '../utils/asyncHandler';
 import { parsePagination, paginate } from '../utils/pagination';
 import { mockInterventions } from '../services/mockData';
+import { interventionRepository } from '../db';
 
 const router = Router();
 
@@ -23,17 +24,27 @@ const createInterventionSchema = z.object({
 
 /**
  * GET /participants/:id/interventions
- * Retrieve interventions assigned to a participant.
+ * Retrieve interventions from DynamoDB, with fallback to mock data.
  */
 router.get(
   '/participants/:id/interventions',
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const statusFilter = req.query.status as string | undefined;
     logger.info('Fetching interventions', { participantId: id });
 
-    let results = mockInterventions.filter((i) => i.participantId === id);
-    if (req.query.status) {
-      results = results.filter((i) => i.status === req.query.status);
+    let results;
+    try {
+      const page = await interventionRepository.listByParticipant(id, {
+        status: statusFilter as Intervention['status'] | undefined,
+      });
+      results = page.items;
+    } catch (err) {
+      logger.warn('DynamoDB intervention query failed, using mock data', { error: (err as Error).message });
+      results = mockInterventions.filter((i) => i.participantId === id);
+      if (statusFilter) {
+        results = results.filter((i) => i.status === statusFilter);
+      }
     }
 
     const params = parsePagination(req);
@@ -44,7 +55,7 @@ router.get(
 
 /**
  * POST /interventions
- * Create a new intervention for a participant.
+ * Create a new intervention, persisting to DynamoDB with mock fallback.
  */
 router.post(
   '/',
@@ -55,20 +66,35 @@ router.post(
       name: req.body.name,
     });
 
-    const newIntervention: Intervention = {
-      id: `int-${String(mockInterventions.length + 1).padStart(3, '0')}`,
-      participantId: req.body.participantId,
-      type: req.body.type,
-      name: req.body.name,
-      startDate: req.body.startDate,
-      endDate: req.body.endDate,
-      status: req.body.status,
-      dosage: req.body.dosage,
-      frequency: req.body.frequency,
-      outcomes: req.body.outcomes,
-    };
+    let newIntervention: Intervention;
 
-    mockInterventions.push(newIntervention);
+    try {
+      newIntervention = await interventionRepository.create(req.body.participantId, {
+        type: req.body.type,
+        name: req.body.name,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        status: req.body.status,
+        dosage: req.body.dosage,
+        frequency: req.body.frequency,
+        outcomes: req.body.outcomes,
+      });
+    } catch (err) {
+      logger.warn('DynamoDB intervention create failed, using in-memory', { error: (err as Error).message });
+      newIntervention = {
+        id: `int-${String(mockInterventions.length + 1).padStart(3, '0')}`,
+        participantId: req.body.participantId,
+        type: req.body.type,
+        name: req.body.name,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        status: req.body.status,
+        dosage: req.body.dosage,
+        frequency: req.body.frequency,
+        outcomes: req.body.outcomes,
+      };
+      mockInterventions.push(newIntervention);
+    }
 
     const response: ApiResponse<Intervention> = {
       success: true,
