@@ -16,6 +16,8 @@ import lifespanRouter from './routes/lifespan';
 import cognitiveRouter from './routes/cognitive';
 import interventionsRouter from './routes/interventions';
 import insightsRouter from './routes/insights';
+import pipelineRouter from './routes/pipeline';
+import emaRouter from './routes/ema';
 
 // Initialize OpenTelemetry tracing before anything else
 if (process.env.OTEL_ENABLED !== 'false') {
@@ -135,6 +137,8 @@ app.use('/api/v1', lifespanRouter);
 app.use('/api/v1', cognitiveRouter);
 app.use('/api/v1/interventions', interventionsRouter);
 app.use('/api/v1', insightsRouter);
+app.use('/api/v1', pipelineRouter);
+app.use('/api/v1', emaRouter);
 
 // The interventions router also exposes a participant-scoped GET, so mount it
 // at the top level /api/v1 as well for the /participants/:id/interventions path.
@@ -179,7 +183,7 @@ const server = app.listen(PORT, () => {
   logger.info(`WELLab API server running on port ${PORT}`);
   logger.info('API base path: /api/v1');
   logger.info(
-    'Registered modules: Emotional Dynamics, Health, Lifespan Trajectory, Cognitive Health, AI Insights',
+    'Registered modules: Emotional Dynamics, Health, Lifespan Trajectory, Cognitive Health, AI Insights, Pipeline Orchestration, EMA Surveys',
   );
 });
 

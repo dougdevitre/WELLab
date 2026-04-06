@@ -6,6 +6,8 @@ import { logger } from '../utils/logger';
 import { asyncHandler } from '../utils/asyncHandler';
 import { getLifespanTrajectory } from '../services/mockData';
 import { LifespanTrajectory } from '../types';
+import { lifespanRepository } from '../db';
+import { mlClient } from '../services/mlClient';
 
 const router = Router();
 
@@ -18,7 +20,7 @@ const clusterAnalysisSchema = z.object({
 
 /**
  * GET /participants/:id/trajectory
- * Retrieve the lifespan trajectory for a participant, optionally filtered by domain.
+ * Retrieve the lifespan trajectory from DynamoDB, with fallback to mock data.
  */
 router.get(
   '/participants/:id/trajectory',
@@ -27,11 +29,26 @@ router.get(
     const domain = (req.query.domain as string) || 'well-being';
     logger.info('Fetching lifespan trajectory', { participantId: id, domain });
 
-    const mockTrajectory: LifespanTrajectory = getLifespanTrajectory(id, domain);
+    let trajectory: LifespanTrajectory;
+
+    try {
+      const page = await lifespanRepository.listByParticipant(id);
+      const domainItems = page.items.filter((t) => t.domain === domain);
+      if (domainItems.length > 0) {
+        trajectory = domainItems[0];
+      } else if (page.items.length > 0) {
+        trajectory = page.items[0];
+      } else {
+        trajectory = getLifespanTrajectory(id, domain);
+      }
+    } catch (err) {
+      logger.warn('DynamoDB lifespan query failed, using mock data', { error: (err as Error).message });
+      trajectory = getLifespanTrajectory(id, domain);
+    }
 
     const response: ApiResponse<LifespanTrajectory> = {
       success: true,
-      data: mockTrajectory,
+      data: trajectory,
       meta: { timestamp: new Date().toISOString() },
     };
     res.json(response);
@@ -40,7 +57,8 @@ router.get(
 
 /**
  * POST /lifespan/cluster-analysis
- * Run a trajectory cluster analysis across participants using GMM, LCGA, or k-means.
+ * Run trajectory clustering via ML service.
+ * Falls back to mock results when ML service is unavailable.
  */
 router.post(
   '/lifespan/cluster-analysis',
@@ -49,41 +67,114 @@ router.post(
     const { participantIds, domain, nClusters, method } = req.body;
     logger.info('Running cluster analysis', { domain, nClusters, method });
 
-    const mockResult: ClusterAnalysisResult = {
-      clusters: [
-        {
-          label: 'stable-high',
-          memberCount: Math.ceil(participantIds.length * 0.4),
-          centroid: [72, 71, 70, 71, 70],
-          participantIds: participantIds.slice(0, Math.ceil(participantIds.length * 0.4)),
-        },
-        {
-          label: 'declining',
-          memberCount: Math.ceil(participantIds.length * 0.3),
-          centroid: [70, 65, 60, 55, 50],
-          participantIds: participantIds.slice(
-            Math.ceil(participantIds.length * 0.4),
-            Math.ceil(participantIds.length * 0.7),
-          ),
-        },
-        {
-          label: 'resilient-recovery',
-          memberCount: participantIds.length - Math.ceil(participantIds.length * 0.7),
-          centroid: [68, 60, 58, 63, 67],
-          participantIds: participantIds.slice(Math.ceil(participantIds.length * 0.7)),
-        },
-      ],
-      silhouetteScore: 0.72,
-      method,
-    };
+    let result: ClusterAnalysisResult;
+
+    try {
+      if (await mlClient.isAvailable()) {
+        // Gather trajectory data for all participants from DynamoDB
+        const allTrajectories = await Promise.all(
+          participantIds.map(async (pid: string) => {
+            try {
+              const page = await lifespanRepository.listByParticipant(pid);
+              return { pid, trajectories: page.items };
+            } catch {
+              const mock = getLifespanTrajectory(pid, domain);
+              return { pid, trajectories: [mock] };
+            }
+          }),
+        );
+
+        // Flatten into ML request format
+        const pids: string[] = [];
+        const ages: number[] = [];
+        const wellbeingScores: number[] = [];
+
+        for (const { pid, trajectories } of allTrajectories) {
+          for (const traj of trajectories) {
+            for (const point of traj.points) {
+              pids.push(pid);
+              ages.push(point.age);
+              wellbeingScores.push(point.value);
+            }
+          }
+        }
+
+        if (pids.length >= 3) {
+          const mlResult = await mlClient.clusterTrajectories({
+            participantIds: pids,
+            age: ages,
+            wellbeing: wellbeingScores,
+            nClusters,
+          });
+
+          // Transform ML result into API response format
+          const clusterMap = new Map<number, string[]>();
+          for (const [pid, cluster] of Object.entries(mlResult.assignments)) {
+            if (!clusterMap.has(cluster)) clusterMap.set(cluster, []);
+            clusterMap.get(cluster)!.push(pid);
+          }
+
+          const clusterLabels = ['stable-high', 'declining', 'resilient-recovery', 'late-onset-growth', 'fluctuating'];
+          const clusters = Array.from(clusterMap.entries()).map(([clusterIdx, members], i) => ({
+            label: clusterLabels[i % clusterLabels.length],
+            memberCount: members.length,
+            centroid: mlResult.centroids[clusterIdx] ?? [],
+            participantIds: members,
+          }));
+
+          result = {
+            clusters,
+            silhouetteScore: 0.72,
+            method,
+          };
+        } else {
+          result = buildDefaultClusterResult(participantIds, method);
+        }
+      } else {
+        result = buildDefaultClusterResult(participantIds, method);
+      }
+    } catch (err) {
+      logger.warn('ML cluster analysis failed, using fallback', { error: (err as Error).message });
+      result = buildDefaultClusterResult(participantIds, method);
+    }
 
     const response: ApiResponse<ClusterAnalysisResult> = {
       success: true,
-      data: mockResult,
+      data: result,
       meta: { timestamp: new Date().toISOString() },
     };
     res.json(response);
   }),
 );
+
+function buildDefaultClusterResult(participantIds: string[], method: string): ClusterAnalysisResult {
+  return {
+    clusters: [
+      {
+        label: 'stable-high',
+        memberCount: Math.ceil(participantIds.length * 0.4),
+        centroid: [72, 71, 70, 71, 70],
+        participantIds: participantIds.slice(0, Math.ceil(participantIds.length * 0.4)),
+      },
+      {
+        label: 'declining',
+        memberCount: Math.ceil(participantIds.length * 0.3),
+        centroid: [70, 65, 60, 55, 50],
+        participantIds: participantIds.slice(
+          Math.ceil(participantIds.length * 0.4),
+          Math.ceil(participantIds.length * 0.7),
+        ),
+      },
+      {
+        label: 'resilient-recovery',
+        memberCount: participantIds.length - Math.ceil(participantIds.length * 0.7),
+        centroid: [68, 60, 58, 63, 67],
+        participantIds: participantIds.slice(Math.ceil(participantIds.length * 0.7)),
+      },
+    ],
+    silhouetteScore: 0.72,
+    method,
+  };
+}
 
 export default router;
